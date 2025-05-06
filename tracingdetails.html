@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Update Tracing Details</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #a18cd1, #fbc2eb);
+      padding: 30px;
+    }
+    form {
+      max-width: 500px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 10px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      margin-bottom: 15px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #5a4fcf;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .success-message {
+      text-align: center;
+      color: green;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    .error-message {
+      text-align: center;
+      color: red;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    a.back-link {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      text-decoration: underline;
+      font-weight: bold;
+      color: #3b3b98;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="adminhome.html">BACK</a>
+
+  <form id="traceForm">
+    <h2>Update Drug Tracing Details</h2>
+
+    <label for="drug-name">Drug Name:</label>
+    <input type="text" id="drug-name" readonly />
+
+    <label for="tracing-type">Tracing Type:</label>
+    <input type="text" id="tracing-type" placeholder="e.g. Logistics, Manufacturing" required />
+
+    <label for="details">Tracing Details:</label>
+    <textarea id="details" rows="3" required></textarea>
+
+    <label for="date">Date:</label>
+    <input type="date" id="date" required />
+
+    <button type="submit">Add Tracing Info</button>
+    <div class="success-message" id="successMsg"></div>
+    <div class="error-message" id="errorMsg"></div>
+  </form>
+
+  <script>
+    let web3;
+    let contract;
+    let currentAccount;
+    let adminAddress;
+    let drugIndex;
+
+    async function initializeForm() {
+      try {
+        const loggedInUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        if (!loggedInUser || loggedInUser.role !== "admin") {
+          document.getElementById("errorMsg").textContent = "Access denied. Only admin can access this page.";
+          setTimeout(() => window.location.href = "homepage.html", 2000);
+          return;
+        }
+
+        if (!window.ethereum) {
+          document.getElementById("errorMsg").textContent = "MetaMask is required";
+          return;
+        }
+
+        web3 = new Web3(window.ethereum);
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        currentAccount = accounts[0].toLowerCase();
+
+        const response = await fetch("build/contracts/TestContract.json");
+        const contractJson = await response.json();
+        const networkId = await web3.eth.net.getId();
+        const deployedNetwork = contractJson.networks[networkId];
+
+        if (!deployedNetwork) {
+          document.getElementById("errorMsg").textContent = "Smart contract not deployed on this network.";
+          return;
+        }
+
+        contract = new web3.eth.Contract(contractJson.abi, deployedNetwork.address);
+        adminAddress = (await contract.methods.getAdmin().call()).toLowerCase();
+
+        if (currentAccount !== adminAddress) {
+          document.getElementById("errorMsg").textContent = "Access denied. Only admin can access this page.";
+          setTimeout(() => window.location.href = "homepage.html", 2000);
+          return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        drugIndex = params.get("drugIndex");
+        const drugName = params.get("drugName");
+
+        if (!drugIndex) {
+          document.getElementById("errorMsg").textContent = "Drug index missing from URL.";
+          return;
+        }
+
+        if (drugName) {
+          document.getElementById("drug-name").value = decodeURIComponent(drugName);
+        }
+
+        document.getElementById("traceForm").addEventListener("submit", async function (e) {
+          e.preventDefault();
+          await submitTracingInfo();
+        });
+      } catch (err) {
+        document.getElementById("errorMsg").textContent = "Initialization error: " + err.message;
+      }
+    }
+
+    async function submitTracingInfo() {
+      const successMsg = document.getElementById("successMsg");
+      const errorMsg = document.getElementById("errorMsg");
+      successMsg.textContent = "";
+      errorMsg.textContent = "";
+
+      const type = document.getElementById("tracing-type").value.trim();
+      const details = document.getElementById("details").value.trim();
+      const date = document.getElementById("date").value;
+
+      try {
+        await contract.methods
+          .addTracingInfo(drugIndex, type, details, date)
+          .send({ from: currentAccount });
+
+        successMsg.textContent = "Tracing info added successfully!";
+        document.getElementById("traceForm").reset();
+      } catch (err) {
+        console.error("Error:", err);
+        errorMsg.textContent = "Failed to add tracing details: " + err.message;
+      }
+    }
+
+    window.addEventListener("load", initializeForm);
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Add New Product</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #bca7b3, #4b494b);
+      margin: 0;
+    }
+
+    .container {
+      background-color: white;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      width: 400px;
+      position: relative;
+    }
+
+    .back-link {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: #5248a8;
+      text-decoration: underline;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    h2 {
+      text-align: center;
+    }
+
+    label {
+      font-weight: bold;
+      display: block;
+      margin: 10px 0 5px;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    .submit-btn {
+      background-color: #5248a8;
+      color: white;
+      border: none;
+      padding: 10px;
+      width: 100%;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .success-message {
+      color: green;
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    .error-message {
+      color: red;
+      text-align: center;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        width: 95%;
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+<a href="adminhome.html" class="back-link">BACK</a>
+
+<div class="container">
+  <h2>Add New Product</h2>
+
+  <form id="drugForm">
+    <label for="drug-name">Drug Name:</label>
+    <input type="text" id="drug-name" required />
+
+    <label for="quantity">Quantity:</label>
+    <input type="number" id="quantity" min="1" required />
+
+    <label for="price">Drug Price:</label>
+    <input type="number" id="price" min="0.0001" step="0.0001" required />
+
+    <label for="description">Description:</label>
+    <textarea id="description" rows="3" required></textarea>
+
+    <button type="submit" class="submit-btn">Add Drug</button>
+    <div id="success" class="success-message"></div>
+    <div id="error" class="error-message"></div>
+  </form>
+</div>
+
+<script>
+  let web3;
+  let contract;
+  let accounts;
+
+  async function checkMetaMask() {
+    if (!window.ethereum) {
+      document.getElementById("error").textContent = "Please install MetaMask to use this app.";
+      return false;
+    }
+    return true;
+  }
+
+  async function loadWeb3AndContract() {
+    try {
+      if (!await checkMetaMask()) return;
+      
+      web3 = new Web3(window.ethereum);
+      accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+      const res = await fetch("build/contracts/TestContract.json");
+      const contractJSON = await res.json();
+
+      const networkId = await web3.eth.net.getId();
+      const deployedNetwork = contractJSON.networks[networkId];
+
+      if (!deployedNetwork) {
+        document.getElementById("error").textContent = "Smart contract not deployed to this network.";
+        return;
+      }
+
+      contract = new web3.eth.Contract(contractJSON.abi, deployedNetwork.address);
+    } catch (err) {
+      document.getElementById("error").textContent = "Error connecting to blockchain: " + err.message;
+    }
+  }
+
+  document.getElementById("drugForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const successDiv = document.getElementById("success");
+    const errorDiv = document.getElementById("error");
+    successDiv.textContent = "";
+    errorDiv.textContent = "";
+
+    const name = document.getElementById("drug-name").value;
+    const quantity = parseInt(document.getElementById("quantity").value);
+    const price = web3.utils.toWei(document.getElementById("price").value, 'ether');
+    const description = document.getElementById("description").value;
+
+    try {
+      await contract.methods.addDrug(name, quantity, price, description)
+        .send({ from: accounts[0] });
+
+      document.getElementById("drugForm").reset();
+      successDiv.textContent = "Drug product added successfully!";
+    } catch (err) {
+      console.error("Error adding drug:", err);
+      errorDiv.textContent = "Failed to add drug: " + err.message;
+    }
+  });
+
+  window.addEventListener("load", loadWeb3AndContract);
+</script>
+</body>
+</html>

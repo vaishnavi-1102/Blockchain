@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Drug Traceability Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #a18cd1, #fbc2eb);
+      padding: 40px;
+      margin: 0;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 25px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #5a4fcf;
+    }
+    .back-button {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .back-button button {
+      background-color: #6a5acd;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+      transition: transform 0.2s;
+    }
+    .back-button button:hover {
+      transform: scale(1.05);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: #7b5eea;
+      color: white;
+      font-weight: bold;
+    }
+    tr:hover {
+      background-color: #f5f5f5;
+    }
+    a {
+      color: #6a5acd;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .disabled-link {
+      color: #999;
+      cursor: not-allowed;
+    }
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+      font-style: italic;
+    }
+    .balance-display {
+      text-align: right;
+      margin-bottom: 15px;
+      font-weight: bold;
+      color: #5a4fcf;
+    }
+    #debugConsole {
+      background: #f8f9fa;
+      padding: 15px;
+      margin-top: 20px;
+      border-radius: 5px;
+      font-family: monospace;
+      border: 1px solid #eee;
+      display: none;
+    }
+    #debugLog {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    .status-success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status-warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .status-error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .update-link {
+      color: #6a5acd;
+      text-decoration: none;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .update-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="balance-display" id="accountBalance">
+      <span id="balanceText">Connecting to blockchain...</span>
+      <span id="networkStatus" class="status-badge">Network: Unknown</span>
+    </div>
+    <h2>Drug Traceability Dashboard</h2>
+
+    <!-- Back Button -->
+    <div class="back-button">
+      <button onclick="goBack()">⬅ Back</button>
+    </div>
+
+    <div id="debugConsole">
+      <strong>System Log</strong>
+      <div id="debugLog"></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Price</th>
+          <th>Quantity</th>
+          <th>Description</th>
+          <th>Last Updated</th>
+          <th>Tracing Info</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="drugTableBody">
+        <tr><td colspan="7" class="loading">Initializing system...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    function goBack() {
+      window.history.back();
+    }
+
+    let web3;
+    let contract;
+    let currentAccount;
+    let adminAddress;
+
+    function debugLog(message, type = 'info') {
+      const logElement = document.getElementById('debugLog');
+      const timestamp = new Date().toLocaleTimeString();
+      
+      logElement.innerHTML += `
+        <div class="log-${type}">
+          [${timestamp}] ${message}
+        </div>
+      `;
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    function updateStatus(elementId, text, status = '') {
+      const element = document.getElementById(elementId);
+      if (element) {
+        element.textContent = text;
+        element.className = `status-badge status-${status}`;
+      }
+    }
+
+    async function initWeb3() {
+      try {
+        if (!window.ethereum) throw new Error('MetaMask not installed');
+        
+        web3 = new Web3(window.ethereum);
+        debugLog('Web3 initialized');
+        
+        window.ethereum.on('accountsChanged', (accounts) => {
+          if (accounts.length > 0) {
+            currentAccount = accounts[0].toLowerCase();
+            debugLog(`Account changed to: ${currentAccount}`);
+            loadDrugs();
+          }
+        });
+        
+        window.ethereum.on('chainChanged', () => {
+          debugLog('Network changed, reloading...', 'warning');
+          window.location.reload();
+        });
+        
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        currentAccount = accounts[0].toLowerCase();
+        debugLog(`Connected account: ${currentAccount}`);
+        
+        return true;
+      } catch (error) {
+        debugLog(`Web3 initialization failed: ${error.message}`, 'error');
+        updateStatus('networkStatus', 'Connection Failed', 'error');
+        return false;
+      }
+    }
+
+    async function verifyNetwork() {
+      try {
+        const chainId = await web3.eth.getChainId();
+        debugLog(`Current chain ID: ${chainId}`);
+        
+        if (parseInt(chainId) !== 1337) {
+          throw new Error(`Please connect to network ID 1337 (Localhost)`);
+        }
+        
+        updateStatus('networkStatus', 'Connected', 'success');
+        return true;
+      } catch (error) {
+        debugLog(`Network verification failed: ${error.message}`, 'error');
+        updateStatus('networkStatus', 'Wrong Network', 'error');
+        return false;
+      }
+    }
+
+    async function loadContract() {
+      try {
+        debugLog('Loading contract ABI...');
+        const response = await fetch('build/contracts/TestContract.json');
+        const contractJson = await response.json();
+        
+        const networkId = await web3.eth.net.getId();
+        const deployedNetwork = contractJson.networks[networkId];
+        
+        if (!deployedNetwork) {
+          throw new Error('Contract not deployed on current network');
+        }
+        
+        contract = new web3.eth.Contract(contractJson.abi, deployedNetwork.address);
+        debugLog(`Contract loaded at ${deployedNetwork.address}`);
+        
+        adminAddress = (await contract.methods.getAdmin().call()).toLowerCase();
+        
+        if (!web3.utils.isAddress(adminAddress)) {
+          throw new Error('Invalid admin address returned');
+        }
+        
+        debugLog(`Admin address verified: ${adminAddress}`);
+        return true;
+      } catch (error) {
+        debugLog(`Contract load failed: ${error.message}`, 'error');
+        return false;
+      }
+    }
+
+    async function loadDrugs() {
+      try {
+        const tableBody = document.getElementById('drugTableBody');
+        tableBody.innerHTML = '<tr><td colspan="7" class="loading">Loading drug data...</td></tr>';
+        
+        debugLog('Fetching drug count...');
+        const count = await contract.methods.getDrugCount().call();
+        
+        debugLog(`Found ${count} drugs in system`);
+        
+        if (count === 0) {
+          tableBody.innerHTML = '<tr><td colspan="7">No drugs found in the system</td></tr>';
+          return;
+        }
+        
+        tableBody.innerHTML = '';
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            await renderDrugRow(i);
+          } catch (error) {
+            debugLog(`Error loading drug ${i}: ${error.message}`, 'error');
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="7">Error loading drug #${i}</td>`;
+            tableBody.appendChild(row);
+          }
+        }
+      } catch (error) {
+        debugLog(`Failed to load drugs: ${error.message}`, 'error');
+        document.getElementById('drugTableBody').innerHTML = `
+          <tr><td colspan="7">Failed to load drug data</td></tr>
+        `;
+      }
+    }
+
+    async function renderDrugRow(index) {
+      const tableBody = document.getElementById('drugTableBody');
+      const rowId = `drug-row-${index}`;
+      
+      const loadingRow = document.createElement('tr');
+      loadingRow.id = rowId;
+      loadingRow.innerHTML = `<td colspan="7">Loading drug #${index}...</td>`;
+      tableBody.appendChild(loadingRow);
+      
+      try {
+        const drug = await contract.methods.getDrug(index).call();
+        let tracingInfo = { types: [], details: [], dates: [] };
+        
+        try {
+          tracingInfo = await contract.methods.getTracingInfo(index).call();
+        } catch (error) {
+          debugLog(`No tracing info for drug ${index}: ${error.message}`, 'warning');
+        }
+        
+        const loggedInUser = JSON.parse(localStorage.getItem("loggedInUser"));
+        const isAdmin = loggedInUser && loggedInUser.role === "admin";
+        
+        const row = document.getElementById(rowId);
+        row.innerHTML = `
+          <td>${drug.name || drug[0] || 'N/A'}</td>
+          <td>${web3.utils.fromWei(drug.price || drug[2] || '0', 'ether')}</td>
+          <td>${drug.quantity || drug[1] || '0'}</td>
+          <td>${drug.description || drug[3] || ''}</td>
+          <td>${tracingInfo.dates?.length ? tracingInfo.dates[tracingInfo.dates.length-1] : '-'}</td>
+          <td>${tracingInfo.details?.length ? 
+            tracingInfo.details[tracingInfo.details.length-1].substring(0, 50) + 
+            (tracingInfo.details[tracingInfo.details.length-1].length > 50 ? '...' : '') : 
+            'No details'}</td>
+          <td>
+            ${isAdmin ? 
+              `<a class="update-link" onclick="redirectToTracing('${encodeURIComponent(drug.name || drug[0])}', ${index})">Update</a>` : 
+              `<span class="disabled-link">View Only</span>`}
+          </td>
+        `;
+        
+        debugLog(`Loaded drug #${index}`);
+      } catch (error) {
+        debugLog(`Error rendering drug ${index}: ${error.message}`, 'error');
+        throw error;
+      }
+    }
+
+    function redirectToTracing(drugName, index) {
+      const loggedInUser = JSON.parse(localStorage.getItem("loggedInUser"));
+      if (loggedInUser && loggedInUser.role === "admin") {
+        window.location.href = `tracingdetails.html?drugIndex=${index}&drugName=${drugName}`;
+      } else {
+        alert("Only admin users can update tracing details");
+      }
+    }
+
+    async function updateAccountInfo() {
+      try {
+        const balance = await web3.eth.getBalance(currentAccount);
+        const ethBalance = web3.utils.fromWei(balance, 'ether');
+        
+        document.getElementById('balanceText').textContent = 
+          `Account: ${currentAccount.substring(0, 6)}...${currentAccount.substring(38)} | Balance: ${parseFloat(ethBalance).toFixed(4)} ETH`;
+      } catch (error) {
+        debugLog(`Failed to get balance: ${error.message}`, 'error');
+      }
+    }
+
+    async function initializeApp() {
+      debugLog('Starting system initialization...');
+      
+      if (!await initWeb3()) return;
+      if (!await verifyNetwork()) return;
+      if (!await loadContract()) return;
+      
+      await updateAccountInfo();
+      await loadDrugs();
+      
+      debugLog('System ready');
+    }
+
+    window.addEventListener('load', initializeApp);
+  </script>
+</body>
+</html>

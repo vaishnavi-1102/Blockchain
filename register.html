@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Register Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #a18cd1, #fbc2eb);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    form {
+      background-color: #fff;
+      padding: 25px 30px;
+      border-radius: 20px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+      width: 320px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 22px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="email"],
+    select {
+      width: 90%;
+      padding: 12px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .toggle-password {
+      cursor: pointer;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 10px;
+      display: block;
+      text-align: right;
+      margin-right: 5%;
+      user-select: none;
+    }
+
+    button {
+      width: 90%;
+      padding: 12px;
+      background-color: #4CAF50;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #3e9142;
+    }
+
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+
+    .error {
+      color: red;
+      font-size: 14px;
+      margin-bottom: 10px;
+      text-align: center;
+      min-height: 20px;
+    }
+
+    .success {
+      color: green;
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 10px;
+      min-height: 20px;
+    }
+
+    .password-strength {
+      font-size: 12px;
+      margin-top: -10px;
+      margin-bottom: 10px;
+      text-align: left;
+      padding-left: 5%;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+      margin-left: 8px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <form id="registerForm">
+    <h2>Register</h2>
+    <div id="error-msg" class="error"></div>
+    <div id="success-msg" class="success"></div>
+    
+    <input type="text" id="username" placeholder="Username" minlength="4" maxlength="20" required>
+    <input type="email" id="email" placeholder="Email" required>
+    <input type="password" id="password" placeholder="Password" minlength="8" required>
+    <div id="password-strength" class="password-strength"></div>
+    <span class="toggle-password" onclick="togglePassword('password')">Show/Hide Password</span>
+    
+    <input type="password" id="confirm-password" placeholder="Confirm Password" required>
+    <span class="toggle-password" onclick="togglePassword('confirm-password')">Show/Hide Confirm Password</span>
+    
+    <select id="role">
+      <option value="user">User</option>
+      <option value="admin">Admin</option>
+    </select>
+    
+    <button type="submit" id="register-btn">Register</button>
+  </form>
+
+  <script>
+    // Password hashing function
+    async function hashPassword(password) {
+      try {
+        const msgBuffer = new TextEncoder().encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        return Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+      } catch (error) {
+        console.error('Password hashing failed:', error);
+        throw new Error('Registration failed due to technical error');
+      }
+    }
+
+    // Toggle password visibility
+    function togglePassword(id) {
+      const input = document.getElementById(id);
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    // Email validation
+    function validateEmail(email) {
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(email);
+    }
+
+    // Password strength indicator
+    function checkPasswordStrength(password) {
+      const strengthText = document.getElementById('password-strength');
+      if (!password) {
+        strengthText.textContent = '';
+        return 0;
+      }
+
+      let strength = 0;
+      if (password.length >= 8) strength++;
+      if (password.match(/[A-Z]/)) strength++;
+      if (password.match(/[0-9]/)) strength++;
+      if (password.match(/[^A-Za-z0-9]/)) strength++;
+
+      const strengthMessages = [
+        'Very Weak',
+        'Weak',
+        'Moderate',
+        'Strong',
+        'Very Strong'
+      ];
+      const strengthColors = [
+        'red',
+        'orangered',
+        'orange',
+        'limegreen',
+        'green'
+      ];
+
+      strengthText.textContent = `Strength: ${strengthMessages[strength]}`;
+      strengthText.style.color = strengthColors[strength];
+      return strength;
+    }
+
+    // Main registration handler
+    async function handleRegister(event) {
+      event.preventDefault();
+      
+      const form = event.target;
+      const registerBtn = document.getElementById('register-btn');
+      const errorMsg = document.getElementById('error-msg');
+      const successMsg = document.getElementById('success-msg');
+      
+      // Clear messages and disable button
+      errorMsg.textContent = '';
+      successMsg.textContent = '';
+      registerBtn.disabled = true;
+      registerBtn.innerHTML = 'Registering <span class="loading"></span>';
+
+      try {
+        // Get form values
+        const username = document.getElementById('username').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const confirmPassword = document.getElementById('confirm-password').value.trim();
+        const role = document.getElementById('role').value;
+
+        // Validate inputs
+        if (!username || !email || !password || !confirmPassword) {
+          throw new Error('Please fill in all fields');
+        }
+
+        if (username.length < 4 || username.length > 20) {
+          throw new Error('Username must be between 4-20 characters');
+        }
+
+        if (!validateEmail(email)) {
+          throw new Error('Please enter a valid email address');
+        }
+
+        if (password.length < 8) {
+          throw new Error('Password must be at least 8 characters');
+        }
+
+        if (password !== confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
+
+        // Check password strength
+        if (checkPasswordStrength(password) < 2) {
+          throw new Error('Password is too weak. Include uppercase letters and numbers');
+        }
+
+        // Check if username exists
+        const users = JSON.parse(localStorage.getItem('users')) || [];
+        if (users.some(user => user.username === username)) {
+          throw new Error('Username already exists');
+        }
+
+        // Hash password and create user
+        const hashedPassword = await hashPassword(password);
+        const newUser = {
+          username,
+          email,
+          password: hashedPassword,
+          role,
+          createdAt: new Date().toISOString()
+        };
+
+        // Save user
+        users.push(newUser);
+        localStorage.setItem('users', JSON.stringify(users));
+
+        // Show success message
+        successMsg.textContent = 'Registration successful! Redirecting to login...';
+        
+        // Redirect after delay
+        setTimeout(() => {
+          window.location.href = 'login.html';
+        }, 1500);
+
+      } catch (error) {
+        errorMsg.textContent = error.message;
+        console.error('Registration error:', error);
+      } finally {
+        registerBtn.disabled = false;
+        registerBtn.textContent = 'Register';
+      }
+    }
+
+    // Initialize form
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('registerForm');
+      form.addEventListener('submit', handleRegister);
+      
+      // Password strength indicator
+      document.getElementById('password').addEventListener('input', function() {
+        checkPasswordStrength(this.value);
+      });
+      
+      // Focus first field
+      document.getElementById('username').focus();
+    });
+  </script>
+</body>
+</html>
